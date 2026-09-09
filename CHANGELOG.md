@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+### Added
+- Package `README.md` so the npm package page shows documentation
+
 ## 0.2.2
 
 ### Changed
