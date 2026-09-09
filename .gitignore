@@ -15,5 +15,3 @@ example/android/
 *.tsbuildinfo
 .turbo/
 .cache/
-.cursor/
-.vscode/
