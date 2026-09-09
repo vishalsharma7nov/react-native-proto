@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+### Changed
+- Republish with npmjs Automation token support
+
 ## 0.2.1
 
 ### Fixed
