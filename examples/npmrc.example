@@ -1,0 +1,17 @@
+# Example .npmrc — install this package from GitHub Packages
+#
+# WHAT THIS FILE IS FOR
+#   npm needs to know that packages under the @vishalsharma7nov scope come from
+#   GitHub Packages (npm.pkg.github.com), not from the public npmjs.com registry.
+#
+# HOW TO USE
+#   1. Copy this file into your app root as `.npmrc`
+#   2. Create a GitHub personal access token with `read:packages`
+#   3. Put the token in your environment as GITHUB_TOKEN, or paste it in place
+#      of ${GITHUB_TOKEN} below (do not commit real tokens to git)
+#
+# ALTERNATIVE (no GitHub Packages)
+#   npm install github:vishalsharma7nov/react-native-proto#v0.1.0
+#
+@vishalsharma7nov:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}

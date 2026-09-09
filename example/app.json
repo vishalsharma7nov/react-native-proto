@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "React Native Proto Example",
+    "slug": "react-native-proto-example",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android", "web"],
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vishalsharma7nov.reactnativeprotoexample"
+    },
+    "android": {
+      "package": "com.vishalsharma7nov.reactnativeprotoexample"
+    }
+  }
+}

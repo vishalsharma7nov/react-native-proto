@@ -1,0 +1,24 @@
+{
+  "name": "react-native-proto-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo for @vishalsharma7nov/react-native-proto",
+  "workspaces": [
+    "packages/*",
+    "example",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @vishalsharma7nov/react-native-proto",
+    "test": "npm run test -w @vishalsharma7nov/react-native-proto",
+    "typecheck": "npm run typecheck -w @vishalsharma7nov/react-native-proto",
+    "lint": "npm run lint -w @vishalsharma7nov/react-native-proto",
+    "sync:protos": "node scripts/sync-protos.mjs",
+    "proto:gen": "node packages/react-native-proto/bin/react-native-proto.js generate --from local --path ./vendor/protos --out ./packages/react-native-proto/src/generated",
+    "proto:watch": "node packages/react-native-proto/bin/react-native-proto.js watch --from local --path ./vendor/protos --out ./packages/react-native-proto/src/generated"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
