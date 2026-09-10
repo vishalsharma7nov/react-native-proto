@@ -1,6 +1,6 @@
 {
   "name": "@vishalsharma7nov/react-native-proto",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Dynamic React Native protobuf client with generate CLI, HTTP/Connect transports, interceptors, and typed errors",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",

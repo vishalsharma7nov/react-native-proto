@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { GetUserRequest } from "@vishalsharma7nov/react-native-proto";
 import { createDemoClient, formatCaughtError } from "../api";
 import { DEMO_USER_ID, USE_MOCK_SERVER } from "../config/flags";
 import { copy } from "../content/copy";
@@ -19,8 +20,7 @@ export function useGetUserDemo() {
       if (!getUser) {
         throw new Error(copy.missingMethod);
       }
-
-      const user = await getUser({ id: DEMO_USER_ID });
+      const user = await getUser(GetUserRequest({ id: DEMO_USER_ID }));
       setOutput(JSON.stringify(user, null, 2));
     } catch (error: unknown) {
       setOutput(formatCaughtError(error));

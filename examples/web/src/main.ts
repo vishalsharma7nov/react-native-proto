@@ -2,11 +2,11 @@ import {
   createClient,
   createLoggingInterceptor,
   createPathForMethod,
+  defaultCodecs,
   isProtoClientError,
-} from '@vishalsharma7nov/react-native-proto';
-import { codecFromType, User } from '@vishalsharma7nov/react-native-proto';
+} from "@vishalsharma7nov/react-native-proto";
 
-const app = document.querySelector('#app')!;
+const app = document.querySelector("#app")!;
 
 app.innerHTML = `
   <main style="font-family: ui-sans-serif, system-ui; max-width: 40rem; margin: 2rem auto; padding: 0 1rem;">
@@ -17,32 +17,36 @@ app.innerHTML = `
   </main>
 `;
 
-const out = document.querySelector('#out') as HTMLPreElement;
+const out = document.querySelector("#out") as HTMLPreElement;
 
 function asBody(bytes: Uint8Array): BodyInit {
   return bytes.buffer.slice(
     bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength
+    bytes.byteOffset + bytes.byteLength,
   ) as ArrayBuffer;
 }
 
 const mockFetch: typeof fetch = async () => {
-  const bytes = codecFromType(User).encode({
-    id: 'web-1',
-    name: 'Web User',
-    email: 'web@example.com',
+  const userCodec = defaultCodecs.get("demo.User");
+  if (!userCodec) {
+    throw new Error("Missing demo.User codec");
+  }
+  const bytes = userCodec.encode({
+    id: "web-1",
+    name: "Web User",
+    email: "web@example.com",
     age: 21,
   });
   return new Response(asBody(bytes), {
     status: 200,
-    headers: { 'Content-Type': 'application/x-protobuf' },
+    headers: { "Content-Type": "application/x-protobuf" },
   });
 };
 
 const api = createClient({
-  baseUrl: 'https://api.example.com',
+  baseUrl: "https://api.example.com",
   fetch: mockFetch,
-  pathForMethod: createPathForMethod('connect'),
+  pathForMethod: createPathForMethod("connect"),
   interceptors: [
     createLoggingInterceptor({
       log: (message, meta) => {
@@ -52,10 +56,10 @@ const api = createClient({
   ],
 });
 
-document.querySelector('#run')!.addEventListener('click', async () => {
-  out.textContent = 'Loading…';
+document.querySelector("#run")!.addEventListener("click", async () => {
+  out.textContent = "Loading…";
   try {
-    const user = await api.userService!.getUser!({ id: 'web-1' });
+    const user = await api.userService!.getUser!({ id: "web-1" });
     out.textContent = JSON.stringify(user, null, 2);
   } catch (error) {
     out.textContent = isProtoClientError(error)

@@ -9,11 +9,11 @@ import {
   OfflineMutationQueue,
   createClient,
   ProtoClientError,
-  User,
   GetUserRequest,
   defaultCodecs,
   methodMap,
 } from '../src/index';
+import { User } from '../src/generated/messages';
 import { CONNECT_FLAG_END_STREAM } from '../src/connect/envelope';
 import { tryParseConnectError } from '../src/connect/errors';
 import { createMockServer } from '../src/mock-server';
@@ -220,7 +220,6 @@ describe('connect server streaming envelopes', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ id: '1' });
     expect(messages[1]).toMatchObject({ id: '2' });
-    // silence unused
-    expect(GetUserRequest).toBeTruthy();
+    expect(GetUserRequest({ id: '1' })).toEqual({ id: '1' });
   });
 });

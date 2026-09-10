@@ -340,32 +340,43 @@ function parseProtoMessages(fileContent) {
   let messageMatch = messageRegex.exec(cleaned);
   while (messageMatch) {
     const name = messageMatch[1];
-    const body = messageMatch[2] || '';
+    const body = stripNestedBlocks(messageMatch[2] || '');
     const fields = [];
+    const seenNames = new Set();
 
     const mapRegex =
-      /(?:repeated\s+|optional\s+|required\s+)?map\s*<\s*([\w.]+)\s*,\s*([\w.]+)\s*>\s+(\w+)\s*=\s*\d+\s*;/g;
+      /(?:repeated\s+|optional\s+|required\s+)?map\s*<\s*([\w.]+)\s*,\s*([\w.]+)\s*>\s+(\w+)\s*=\s*(\d+)\s*;/g;
     let mapMatch = mapRegex.exec(body);
     const mapFieldNames = new Set();
     while (mapMatch) {
       const keyTs = protoTypeToTs(mapMatch[1]);
       const valueTs = protoTypeToTs(mapMatch[2]);
       const fieldName = mapMatch[3];
+      const fieldNumber = Number(mapMatch[4]) || 1;
       mapFieldNames.add(fieldName);
-      fields.push({
-        name: fieldName,
-        tsType: `Record<${keyTs}, ${valueTs}>`,
-      });
+      const prop = safeTsPropName(fieldName);
+      if (!seenNames.has(prop)) {
+        seenNames.add(prop);
+        fields.push({
+          name: prop,
+          protoName: fieldName,
+          protoType: 'string',
+          id: fieldNumber,
+          repeated: false,
+          tsType: `Record<${keyTs}, ${valueTs}>`,
+        });
+      }
       mapMatch = mapRegex.exec(body);
     }
 
     const fieldRegex =
-      /(repeated|optional|required)?\s*([\w.]+)\s+(\w+)\s*=\s*\d+\s*;/g;
+      /(repeated|optional|required)?\s*([\w.]+)\s+(\w+)\s*=\s*(\d+)\s*;/g;
     let fieldMatch = fieldRegex.exec(body);
     while (fieldMatch) {
       const label = fieldMatch[1] || '';
       const typeName = fieldMatch[2];
       const fieldName = fieldMatch[3];
+      const fieldNumber = Number(fieldMatch[4]) || 1;
       if (mapFieldNames.has(fieldName)) {
         fieldMatch = fieldRegex.exec(body);
         continue;
@@ -375,11 +386,24 @@ function parseProtoMessages(fileContent) {
         fieldMatch = fieldRegex.exec(body);
         continue;
       }
+      const prop = safeTsPropName(fieldName);
+      if (seenNames.has(prop)) {
+        fieldMatch = fieldRegex.exec(body);
+        continue;
+      }
+      seenNames.add(prop);
       let tsType = protoTypeToTs(typeName);
       if (label === 'repeated') {
         tsType = `${tsType}[]`;
       }
-      fields.push({ name: fieldName, tsType });
+      fields.push({
+        name: prop,
+        protoName: fieldName,
+        protoType: typeName,
+        id: fieldNumber,
+        repeated: label === 'repeated',
+        tsType,
+      });
       fieldMatch = fieldRegex.exec(body);
     }
 
@@ -398,7 +422,70 @@ function parseProtoMessages(fileContent) {
 
 function toCamelCase(name) {
   if (!name) return name;
-  return name.charAt(0).toLowerCase() + name.slice(1);
+  const parts = String(name).split('_');
+  const first = parts[0] || '';
+  const firstCamel =
+    first.length === 0
+      ? first
+      : first.charAt(0).toLowerCase() + first.slice(1);
+  const rest = parts
+    .slice(1)
+    .map((part) => {
+      if (!part) return '';
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join('');
+  return firstCamel + rest;
+}
+
+const TS_RESERVED = new Set([
+  'default',
+  'class',
+  'function',
+  'var',
+  'let',
+  'const',
+  'enum',
+  'export',
+  'import',
+  'return',
+  'new',
+  'delete',
+  'typeof',
+  'instanceof',
+  'void',
+  'yield',
+  'await',
+  'extends',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'static',
+  'super',
+  'this',
+  'true',
+  'false',
+  'null',
+  'undefined',
+]);
+
+function safeTsPropName(name) {
+  const camel = toCamelCase(name);
+  if (TS_RESERVED.has(camel)) return `${camel}_`;
+  return camel;
+}
+
+function stripNestedBlocks(body) {
+  let out = body;
+  const nested = /(message|enum|oneof)\s+\w*\s*\{[^{}]*\}/g;
+  while (nested.test(out)) {
+    out = out.replace(nested, '');
+    nested.lastIndex = 0;
+  }
+  return out;
 }
 
 function resolveImportPaths(importFrom) {
@@ -416,46 +503,302 @@ function resolveImportPaths(importFrom) {
   };
 }
 
-function writeMessageTypes(outDir, messages) {
+function parseProtoEnums(fileContent) {
+  const enums = [];
+  const cleaned = stripProtoComments(fileContent);
+  let packageName = '';
+  const packageMatch = cleaned.match(/package\s+([A-Za-z0-9_.]+)\s*;/);
+  if (packageMatch) {
+    packageName = packageMatch[1];
+  }
+  const enumRegex = /enum\s+(\w+)\s*\{([\s\S]*?)\}/g;
+  let match = enumRegex.exec(cleaned);
+  while (match) {
+    const name = match[1];
+    const body = match[2] || '';
+    const values = [];
+    const valueRegex = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\d+/gm;
+    let valueMatch = valueRegex.exec(body);
+    while (valueMatch) {
+      values.push(valueMatch[1]);
+      valueMatch = valueRegex.exec(body);
+    }
+    enums.push({
+      name,
+      values,
+      packageName,
+      fullName: packageName ? `${packageName}.${name}` : name,
+    });
+    match = enumRegex.exec(cleaned);
+  }
+  return enums;
+}
+
+function pascalSegment(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** package.foo.v1 → PackageFooV1 */
+function packagePrefix(packageName) {
+  return String(packageName || '')
+    .split('.')
+    .filter(Boolean)
+    .map(pascalSegment)
+    .join('');
+}
+
+/**
+ * Unique export names for messages/enums that share a simple name across packages.
+ * Unambiguous names stay as the proto simple name (e.g. GetActiveProfileRequest).
+ */
+function buildUniqueNames(items) {
+  const byFull = new Map();
+  for (let i = 0; i < (items || []).length; i += 1) {
+    const item = items[i];
+    const key = item.fullName || item.name;
+    byFull.set(key, item);
+  }
+  const unique = Array.from(byFull.values());
+  const counts = new Map();
+  for (let i = 0; i < unique.length; i += 1) {
+    const n = unique[i].name;
+    counts.set(n, (counts.get(n) || 0) + 1);
+  }
+  /** fullName → exportName */
+  const names = new Map();
+  for (let i = 0; i < unique.length; i += 1) {
+    const item = unique[i];
+    const key = item.fullName || item.name;
+    if ((counts.get(item.name) || 0) > 1) {
+      names.set(key, `${packagePrefix(item.packageName)}${item.name}`);
+    } else {
+      names.set(key, item.name);
+    }
+  }
+  return { names, unique };
+}
+
+function lookupUniqueName(names, packageName, typeName) {
+  const simple = simpleTypeName(typeName);
+  if (!typeName) return simple;
+  if (String(typeName).includes('.')) {
+    const hit = names.get(typeName);
+    if (hit) return hit;
+  }
+  const samePkg = packageName ? `${packageName}.${simple}` : simple;
+  if (names.has(samePkg)) return names.get(samePkg);
+
+  const matches = [];
+  for (const [full, exportName] of names.entries()) {
+    if (full === simple || full.endsWith(`.${simple}`)) {
+      matches.push(exportName);
+    }
+  }
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    // Ambiguous short name (multiple packages). Prefer a stable first match
+    // so generated field types always resolve to an exported name.
+    return matches.slice().sort()[0];
+  }
+  return simple;
+}
+
+function remapFieldTsType(tsType, message, messageNames, enumNames, stubs) {
+  const raw = String(tsType || '');
+  if (raw.startsWith('Record<')) return raw;
+  const isArray = raw.endsWith('[]');
+  const base = isArray ? raw.slice(0, -2) : raw;
+  if (!base || stubs.has(base) || !/^[A-Z]/.test(base)) return raw;
+
+  const samePkg = message.packageName ? `${message.packageName}.${base}` : base;
+  if (messageNames.has(samePkg)) {
+    const name = messageNames.get(samePkg);
+    return isArray ? `${name}[]` : name;
+  }
+  if (enumNames.has(samePkg)) {
+    const name = enumNames.get(samePkg);
+    return isArray ? `${name}[]` : name;
+  }
+  const combined = new Map([...messageNames, ...enumNames]);
+  const name = lookupUniqueName(combined, message.packageName, base);
+  return isArray ? `${name}[]` : name;
+}
+
+function emitMessageConstructor(lines, exportName) {
+  lines.push(
+    `/** Construct a ${exportName} (same pattern as dart_proto named constructors). */`
+  );
+  lines.push(
+    `export function ${exportName}(init: ${exportName} = {}): ${exportName} {`
+  );
+  lines.push('  return { ...init };');
+  lines.push('}');
+  lines.push('');
+}
+
+function writeMessageTypes(outDir, messages, enums = []) {
+  const stubs = new Set([
+    'LatLng',
+    'Timestamp',
+    'Duration',
+    'Empty',
+    'FieldMask',
+    'Money',
+  ]);
+  const { names: messageNames, unique: uniqueMessages } =
+    buildUniqueNames(messages);
+  const { names: enumNames, unique: uniqueEnums } = buildUniqueNames(enums);
+
   const lines = [
     '/**',
     ' * Auto-generated TypeScript message types. Do not edit by hand.',
-    ' * Parsed from .proto message field definitions (simple regex parser).',
+    ' * Field names are camelCase (proto snake_case mapped). Prefer these',
+    ' * Request / Response types with createApi().',
+    ' * Also exports constructor helpers so editors suggest fields, matching dart_proto:',
+    ' *   getActiveProfile(GetActiveProfileRequest({ latLng: LatLng({ ... }) }))',
+    ' * Colliding simple names across packages are prefixed (e.g. DriverAdminV1…).',
     ' */',
     '',
+    '// Well-known / external stubs referenced by vendored protos',
+    'export type LatLng = { latitude?: number; longitude?: number };',
+    'export type Timestamp = { seconds?: number; nanos?: number };',
+    'export type Duration = { seconds?: number; nanos?: number };',
+    'export type Empty = Record<string, never>;',
+    'export type FieldMask = { paths?: string[] };',
+    'export type Money = { currencyCode?: string; units?: number; nanos?: number };',
+    '',
   ];
+  emitMessageConstructor(lines, 'LatLng');
+  emitMessageConstructor(lines, 'Timestamp');
+  emitMessageConstructor(lines, 'Duration');
+  emitMessageConstructor(lines, 'Empty');
+  emitMessageConstructor(lines, 'FieldMask');
+  emitMessageConstructor(lines, 'Money');
 
-  // Deduplicate by simple name (last wins if conflicts)
-  const byName = new Map();
-  for (let i = 0; i < messages.length; i += 1) {
-    byName.set(messages[i].name, messages[i]);
-  }
-
-  const sorted = Array.from(byName.values()).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
-
-  for (let i = 0; i < sorted.length; i += 1) {
-    const msg = sorted[i];
-    lines.push(`export type ${msg.name} = {`);
-    for (let j = 0; j < msg.fields.length; j += 1) {
-      const field = msg.fields[j];
-      lines.push(`  ${field.name}?: ${field.tsType};`);
+  const sortedEnums = uniqueEnums
+    .slice()
+    .sort((a, b) => {
+      const an = enumNames.get(a.fullName || a.name);
+      const bn = enumNames.get(b.fullName || b.name);
+      return String(an).localeCompare(String(bn));
+    });
+  const seenEnumExports = new Set(stubs);
+  for (let i = 0; i < sortedEnums.length; i += 1) {
+    const en = sortedEnums[i];
+    const exportName = enumNames.get(en.fullName || en.name);
+    if (!exportName || seenEnumExports.has(exportName)) continue;
+    seenEnumExports.add(exportName);
+    if (en.values.length > 0) {
+      lines.push(
+        `export type ${exportName} = ${en.values.map((v) => `'${v}'`).join(' | ')};`
+      );
+    } else {
+      lines.push(`export type ${exportName} = string;`);
     }
-    lines.push('};');
     lines.push('');
   }
 
+  const sorted = uniqueMessages
+    .slice()
+    .sort((a, b) => {
+      const an = messageNames.get(a.fullName || a.name);
+      const bn = messageNames.get(b.fullName || b.name);
+      return String(an).localeCompare(String(bn));
+    });
+
+  const seenMsgExports = new Set(seenEnumExports);
+  for (let i = 0; i < sorted.length; i += 1) {
+    const msg = sorted[i];
+    const exportName = messageNames.get(msg.fullName || msg.name);
+    if (!exportName || stubs.has(msg.name) || seenMsgExports.has(exportName)) {
+      continue;
+    }
+    seenMsgExports.add(exportName);
+    lines.push(`export type ${exportName} = {`);
+    for (let j = 0; j < msg.fields.length; j += 1) {
+      const field = msg.fields[j];
+      const tsType = remapFieldTsType(
+        field.tsType,
+        msg,
+        messageNames,
+        enumNames,
+        stubs
+      );
+      lines.push(`  ${field.name}?: ${tsType};`);
+    }
+    lines.push('};');
+    lines.push('');
+    emitMessageConstructor(lines, exportName);
+  }
+
   fs.writeFileSync(path.join(outDir, 'message-types.ts'), lines.join('\n'), 'utf8');
+  return { messageNames, enumNames };
 }
 
-function writeCreateApi(outDir, methods, messages, importFrom) {
+function writeCreateApi(
+  outDir,
+  methods,
+  messages,
+  enums,
+  importFrom,
+  nameMaps
+) {
   const imports = resolveImportPaths(importFrom);
-  const messageNames = Array.from(
-    new Set(messages.map((m) => m.name))
-  ).sort();
+  const messageNames =
+    (nameMaps && nameMaps.messageNames) || buildUniqueNames(messages).names;
+  const enumNames =
+    (nameMaps && nameMaps.enumNames) || buildUniqueNames(enums || []).names;
 
-  // Group methods by service
+  const stubList = [
+    'LatLng',
+    'Timestamp',
+    'Duration',
+    'Empty',
+    'FieldMask',
+    'Money',
+  ];
+  const knownExports = new Set([
+    ...messageNames.values(),
+    ...enumNames.values(),
+    ...stubList,
+  ]);
+
+  const referenced = new Set();
+  for (let i = 0; i < methods.length; i += 1) {
+    const m = methods[i];
+    referenced.add(
+      lookupUniqueName(messageNames, m.packageName, m.requestType)
+    );
+    referenced.add(
+      lookupUniqueName(messageNames, m.packageName, m.responseType)
+    );
+  }
+  // Nested field types from referenced messages
+  for (let i = 0; i < (messages || []).length; i += 1) {
+    const msg = messages[i];
+    const exportName = messageNames.get(msg.fullName || msg.name);
+    if (!exportName || !referenced.has(exportName)) continue;
+    for (let j = 0; j < msg.fields.length; j += 1) {
+      const remapped = remapFieldTsType(
+        msg.fields[j].tsType,
+        msg,
+        messageNames,
+        enumNames,
+        new Set(stubList)
+      );
+      const t = String(remapped)
+        .replace(/\[\]$/, '')
+        .replace(/^Record<[^>]+>$/, '');
+      if (/^[A-Z]/.test(t)) referenced.add(t);
+    }
+  }
+
+  const typeImportNames = Array.from(referenced)
+    .filter((n) => knownExports.has(n))
+    .sort();
+
+  // Group methods by service (same as Dart: merge same service name)
   const byService = new Map();
   for (let i = 0; i < methods.length; i += 1) {
     const m = methods[i];
@@ -465,13 +808,14 @@ function writeCreateApi(outDir, methods, messages, importFrom) {
   }
 
   const typeImport =
-    messageNames.length > 0
-      ? `import type {\n  ${messageNames.join(',\n  ')},\n} from './message-types';\n`
+    typeImportNames.length > 0
+      ? `import type {\n  ${typeImportNames.join(',\n  ')},\n} from './message-types';\n`
       : '';
 
   const lines = [
     '/**',
     ' * Auto-generated typed API factory. Do not edit by hand.',
+    ' * Method params use generated Request types (not Record / object).',
     ' */',
     imports.createApiImports,
     `import { methodMap } from './method-map';`,
@@ -493,19 +837,25 @@ function writeCreateApi(outDir, methods, messages, importFrom) {
       iface,
     });
 
+    // Deduplicate methods by camel name (first wins) — mirrors Dart merge
+    const seenMethods = new Set();
     lines.push(`export type ${iface} = {`);
     for (let j = 0; j < serviceMethods.length; j += 1) {
       const m = serviceMethods[j];
       const methodKey = toCamelCase(m.methodName);
-      const req = simpleTypeName(m.requestType);
-      const res = simpleTypeName(m.responseType);
+      if (seenMethods.has(methodKey)) continue;
+      seenMethods.add(methodKey);
+      const req = lookupUniqueName(messageNames, m.packageName, m.requestType);
+      const res = lookupUniqueName(messageNames, m.packageName, m.responseType);
+      const reqType = knownExports.has(req) ? req : 'Record<string, unknown>';
+      const resType = knownExports.has(res) ? res : 'Record<string, unknown>';
       if (m.kind === 'unary') {
         lines.push(
-          `  ${methodKey}: (request?: ${req}, options?: { signal?: AbortSignal }) => Promise<${res}>;`
+          `  ${methodKey}: (request?: ${reqType}, options?: { signal?: AbortSignal }) => Promise<${resType}>;`
         );
       } else {
         lines.push(
-          `  ${methodKey}: (request?: ${req}, options?: { signal?: AbortSignal }) => AsyncIterable<${res}>;`
+          `  ${methodKey}: (request?: ${reqType}, options?: { signal?: AbortSignal }) => AsyncIterable<${resType}>;`
         );
       }
     }
@@ -541,7 +891,15 @@ function pbAccessPath(fullName) {
   return `pb${parts.map((p) => `?.${p}`).join('')}`;
 }
 
-function writeGenerated(outDir, protoFiles, methods, messages, importFrom) {
+function writeGenerated(
+  outDir,
+  protoRoot,
+  protoFiles,
+  methods,
+  messages,
+  enums,
+  importFrom
+) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const paths = resolveImportPaths(importFrom);
@@ -561,8 +919,8 @@ export const methodMap: MethodMap = ${JSON.stringify(
 
   fs.writeFileSync(path.join(outDir, 'method-map.ts'), methodMapSource, 'utf8');
 
-  writeMessageTypes(outDir, messages);
-  writeCreateApi(outDir, methods, messages, importFrom);
+  const nameMaps = writeMessageTypes(outDir, messages, enums);
+  writeCreateApi(outDir, methods, messages, enums, importFrom, nameMaps);
 
   // Prefer pbjs when available for full message codecs
   let pbjsBin = null;
@@ -585,35 +943,45 @@ export const methodMap: MethodMap = ${JSON.stringify(
   }
 
   const messagesJs = path.join(outDir, 'messages.pb.js');
-  const relativeProtos = protoFiles;
 
   if (pbjsBin) {
+    // -p so imports like "service/types/v1/geometry.proto" resolve from vendor root
+    // Also include protobufjs well-known google/protobuf/*.proto
+    let pbjsGoogleRoot = '';
+    try {
+      pbjsGoogleRoot = path.dirname(require.resolve('protobufjs/package.json'));
+    } catch (_err) {
+      pbjsGoogleRoot = '';
+    }
     const pbjsArgs = [
       '-t',
       'static-module',
       '-w',
       'commonjs',
-      '-o',
-      messagesJs,
-      ...relativeProtos,
+      '-p',
+      protoRoot,
     ];
+    if (pbjsGoogleRoot) {
+      pbjsArgs.push('-p', pbjsGoogleRoot);
+    }
+    pbjsArgs.push('-o', messagesJs, ...protoFiles);
     const useNpx = pbjsBin === 'pbjs';
     const result = spawnSync(
       useNpx ? 'npx' : process.execPath,
       useNpx ? ['--no-install', 'pbjs', ...pbjsArgs] : [pbjsBin, ...pbjsArgs],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     );
     if (result.status !== 0) {
       console.warn(
         'react-native-proto: pbjs failed; writing descriptor stub. Details:',
         result.stderr || result.stdout
       );
-      writeMessagesStub(outDir, methods, importFrom);
+      writeMessagesStub(outDir, methods, messages, importFrom);
     } else {
       writeMessagesWrapper(outDir, messages, importFrom);
     }
   } else {
-    writeMessagesStub(outDir, methods, importFrom);
+    writeMessagesStub(outDir, methods, messages, importFrom);
   }
 
   console.log(
@@ -626,35 +994,36 @@ export const methodMap: MethodMap = ${JSON.stringify(
 
 function writeMessagesWrapper(outDir, messages, importFrom) {
   const paths = resolveImportPaths(importFrom);
-
-  // Deduplicate message names for exports
-  const byName = new Map();
-  for (let i = 0; i < (messages || []).length; i += 1) {
-    byName.set(messages[i].name, messages[i]);
-  }
-  const sorted = Array.from(byName.values()).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
+  const { names: messageNames, unique } = buildUniqueNames(messages);
+  const sorted = unique.slice().sort((a, b) => {
+    const an = messageNames.get(a.fullName || a.name);
+    const bn = messageNames.get(b.fullName || b.name);
+    return String(an).localeCompare(String(bn));
+  });
 
   // Message TypeScript shapes live in message-types.ts only.
-  // This file exports protobufjs Type codecs with the same names (values).
+  // This file exports protobufjs Type codecs (values) with unique names.
 
   const namedExports = sorted
     .map((m) => {
+      const exportName = messageNames.get(m.fullName || m.name);
       const access = pbAccessPath(m.fullName);
-      return `export const ${m.name} = ${access} as Type;`;
+      return `export const ${exportName} = ${access} as Type;`;
     })
     .join('\n');
 
-  // Also export top-level package namespaces when present
-  const packages = Array.from(
-    new Set(sorted.map((m) => m.packageName).filter(Boolean))
+  // Also export top-level package namespaces when present (once per root)
+  const packageRoots = Array.from(
+    new Set(
+      sorted
+        .map((m) => m.packageName)
+        .filter(Boolean)
+        .map((pkg) => String(pkg).split('.')[0])
+        .filter(Boolean)
+    )
   );
-  const packageExports = packages
-    .map((pkg) => {
-      const root = pkg.split('.')[0];
-      return `export const ${root} = pb.${root};`;
-    })
+  const packageExports = packageRoots
+    .map((root) => `export const ${root} = pb.${root};`)
     .join('\n');
 
   const wrapper = `/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
@@ -697,21 +1066,75 @@ export default pb;
   fs.writeFileSync(path.join(outDir, 'messages.ts'), wrapper, 'utf8');
 }
 
-function writeMessagesStub(outDir, methods, importFrom) {
+function writeMessagesStub(outDir, methods, messages, importFrom) {
   const paths = resolveImportPaths(importFrom);
   const typeNames = Array.from(
     new Set(methods.flatMap((m) => [m.requestType, m.responseType]))
   );
+
+  const { names: messageNames, unique } = buildUniqueNames(messages);
+  const sorted = unique.slice().sort((a, b) => {
+    const an = messageNames.get(a.fullName || a.name);
+    const bn = messageNames.get(b.fullName || b.name);
+    return String(an).localeCompare(String(bn));
+  });
+
+  const fieldDefs = sorted
+    .map((m) => {
+      const fields = (m.fields || [])
+        .map((f) => {
+          const wireType = SCALAR_TO_TS[f.protoType]
+            ? f.protoType
+            : 'string';
+          const rule = f.repeated ? ', rule: "repeated"' : '';
+          return `    ${JSON.stringify(f.protoName || f.name)}: { type: ${JSON.stringify(wireType)}, id: ${Number(f.id) || 1}${rule} }`;
+        })
+        .join(',\n');
+      return `  ${JSON.stringify(m.fullName)}: {\n${fields}\n  }`;
+    })
+    .join(',\n');
+
+  const namedExports = sorted
+    .map((m) => {
+      const exportName = messageNames.get(m.fullName || m.name);
+      return `export const ${exportName} = messageTypes[${JSON.stringify(m.fullName)}]!;`;
+    })
+    .join('\n');
+
   const stub = `import protobuf from 'protobufjs';
 ${paths.codecsImport}
 
 /**
- * Stub registry. Run with protobufjs-cli (pbjs) available for full codecs.
+ * Fallback registry when pbjs is unavailable. Prefer regenerating with pbjs.
  * Types referenced: ${typeNames.join(', ')}
  */
 const root = new protobuf.Root();
+const fieldTable: Record<
+  string,
+  Record<string, { type: string; id: number; rule?: string }>
+> = {
+${fieldDefs}
+};
+
 export const messageTypes: Record<string, protobuf.Type> = {};
+for (const [fullName, fields] of Object.entries(fieldTable)) {
+  const type = new protobuf.Type(fullName.split('.').pop()!);
+  for (const [fname, meta] of Object.entries(fields)) {
+    type.add(
+      new protobuf.Field(
+        fname,
+        meta.id,
+        meta.type,
+        meta.rule as 'repeated' | undefined
+      )
+    );
+  }
+  root.add(type);
+  messageTypes[fullName] = type;
+}
+
 export const defaultCodecs = createCodecRegistry(messageTypes);
+${namedExports}
 export { root };
 `;
   fs.writeFileSync(path.join(outDir, 'messages.ts'), stub, 'utf8');
@@ -740,12 +1163,14 @@ function generate(args) {
   const protoFiles = listProtoFiles(protoRoot);
   const methods = [];
   const messages = [];
+  const enums = [];
 
   for (let i = 0; i < protoFiles.length; i += 1) {
     const file = protoFiles[i];
     const content = fs.readFileSync(file, 'utf8');
     methods.push(...parseProtoServices(content, file));
     messages.push(...parseProtoMessages(content));
+    enums.push(...parseProtoEnums(content));
   }
 
   if (methods.length === 0) {
@@ -756,9 +1181,11 @@ function generate(args) {
 
   writeGenerated(
     path.resolve(args.out),
+    path.resolve(protoRoot),
     protoFiles,
     methods,
     messages,
+    enums,
     args.importFrom || ''
   );
 }

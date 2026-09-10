@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4
+
+### Added
+- Message constructor helpers (`GetUserRequest({ id })`) and camelCase generated fields (dart_proto-style DX)
+- Prefer `createApi()` for typed Request / Response method signatures
+
+### Changed
+- Example / web demos use `createApi`, `defaultCodecs`, and request constructors
+
 ## 0.2.3
 
 ### Added

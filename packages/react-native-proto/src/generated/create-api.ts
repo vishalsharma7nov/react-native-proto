@@ -1,5 +1,6 @@
 /**
  * Auto-generated typed API factory. Do not edit by hand.
+ * Method params use generated Request types (not Record / object).
  */
 import { createClientFromMap } from '../client-factory';
 import type { ProtoClientConfig } from '../types';

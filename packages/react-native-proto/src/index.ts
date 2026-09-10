@@ -54,22 +54,21 @@ export {
   decodeConnectEnvelopes,
 } from "./connect/envelope";
 export { methodMap } from "./generated/method-map";
-export {
-  AddUserRequest,
-  defaultCodecs,
-  DeleteUserRequest,
-  DeleteUserResponse,
-  GetUserByEmailRequest,
-  GetUserRequest,
-  ListUsersRequest,
-  ListUsersResponse,
-  UpdateUserRequest,
-  User,
-} from "./generated/messages";
+/** Protobufjs codecs keyed by proto type name (e.g. demo.User). */
+export { defaultCodecs } from "./generated/messages";
 export {
   isNativeGrpcAvailable,
   installNativeGrpcBridgeFromNativeModule,
 } from "./native-grpc";
+
+/** Typed API factory — methods take generated Request types (not Record). */
+export {
+  createApi,
+  type GeneratedApi,
+} from "./generated/create-api";
+/** Message constructors + types (GetActiveProfileRequest({ latLng: LatLng({ ... }) })). */
+export * from "./generated/message-types";
+export type * from "./generated/create-api";
 
 export type CreateClientOptions = ProtoClientConfig & {
   /** Override generated method map (advanced / tests) */
@@ -80,6 +79,7 @@ export type CreateClientOptions = ProtoClientConfig & {
 
 /**
  * Create a dynamic API client from package method metadata + your app config.
+ * Prefer {@link createApi} when you want typed Request / Response shapes.
  *
  * @example
  * const api = createClient({
@@ -93,9 +93,6 @@ export function createClient(config: CreateClientOptions): ProtoClient {
   const codecs = config.codecs ?? defaultCodecs;
   return createClientFromMap(config, map, codecs);
 }
-
-/** Alias preferred in generated `create-api.ts` drop-ins. */
-export const createApi = createClient;
 
 export function getDefaultMethodMap(): MethodMap {
   return methodMap;
