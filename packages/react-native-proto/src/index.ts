@@ -20,6 +20,13 @@ export type {
   ProtoClientConfig,
   TransportKind,
 } from "./types";
+export { ProtoSource } from "./proto-source";
+export type {
+  BufProtoSource,
+  GithubProtoSource,
+  LocalProtoSource,
+  ProtoSourceKind,
+} from "./proto-source";
 
 export type { CallContext, Interceptor, UnaryHandler } from "./interceptors";
 export type { PathTemplatePreset } from "./path-templates";

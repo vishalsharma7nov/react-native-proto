@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `ProtoClientConfig.protoSource` — local path, GitHub repo, or Buf module. When omitted, `react-native-proto generate` fetches `.proto` files from the project directory.
+
 ## 0.2.4
 
 ### Added

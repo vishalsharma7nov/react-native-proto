@@ -8,10 +8,12 @@ import {
   createAuthInterceptor,
   createLoggingInterceptor,
   createPathForMethod,
+  ProtoSource,
 } from '@vishalsharma7nov/react-native-proto';
 
 const config: ProtoClientConfig = {
   baseUrl: 'https://api.example.com',
+  protoSource: ProtoSource.local('protos'),
   pathPreset: 'connect',
   interceptors: [
     createAuthInterceptor({
@@ -30,6 +32,7 @@ export default config;
 | Field | Required | Default | Meaning |
 |-------|----------|---------|---------|
 | `baseUrl` | Yes | — | API origin (absolute URL) |
+| `protoSource` | No | none | Where generate loads `.proto` files (local path, GitHub, or Buf). When omitted, generate fetches them from the project directory. Not used by `createApi` at request time. |
 | `getHeaders` | No | none | Per-request headers |
 | `timeoutMs` | No | `30000` | Request timeout |
 | `maxResponseBytes` | No | `2 MiB` | Max response size |

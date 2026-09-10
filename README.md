@@ -55,9 +55,11 @@ Create `react-native-proto.config.ts`:
 
 ```ts
 import type { ProtoClientConfig } from '@vishalsharma7nov/react-native-proto';
+import { ProtoSource } from '@vishalsharma7nov/react-native-proto';
 
 const config: ProtoClientConfig = {
   baseUrl: 'https://api.example.com',
+  protoSource: ProtoSource.local('protos'),
   getHeaders: async () => ({
     Authorization: `Bearer ${await getToken()}`,
   }),
@@ -91,6 +93,9 @@ try {
 ## Generate from your own protos
 
 ```bash
+# Discover .proto files in the project (protos/, vendor/protos/, or cwd)
+npx react-native-proto generate --out ./src/generated
+
 # Local folder
 npx react-native-proto generate --from local --path ./protos --out ./src/generated
 

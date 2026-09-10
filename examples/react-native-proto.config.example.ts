@@ -19,6 +19,7 @@
 
 import type { ProtoClientConfig } from '@vishalsharma7nov/react-native-proto';
 import {
+  ProtoSource,
   createAuthInterceptor,
   createLoggingInterceptor,
 } from '@vishalsharma7nov/react-native-proto';
@@ -35,6 +36,23 @@ const config: ProtoClientConfig = {
    *   http://10.0.2.2:8080   (Android emulator → host machine)
    */
   baseUrl: 'https://api.example.com',
+
+  // ---------------------------------------------------------------------------
+  // OPTIONAL — where generate/sync loads .proto files
+  // Omit protoSource (or use ProtoSource.local() with no path) to fetch
+  // .proto files from this project: protos/, proto/, vendor/protos/, or cwd.
+  // ---------------------------------------------------------------------------
+
+  protoSource: ProtoSource.local('protos'),
+  // protoSource: ProtoSource.github({
+  //   repo: 'https://github.com/you/your-protos.git',
+  //   ref: 'v1.2.3',
+  //   path: 'protos',
+  // }),
+  // protoSource: ProtoSource.buf({
+  //   module: 'buf.build/acme/petapis',
+  //   ref: '1.0.0',
+  // }),
 
   // ---------------------------------------------------------------------------
   // OPTIONAL — auth and other headers

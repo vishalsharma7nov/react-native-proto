@@ -25,9 +25,11 @@ Create `react-native-proto.config.ts` **in your app** (next to your source code)
 
 ```ts
 import type { ProtoClientConfig } from '@vishalsharma7nov/react-native-proto';
+import { ProtoSource } from '@vishalsharma7nov/react-native-proto';
 
 const config: ProtoClientConfig = {
   baseUrl: 'https://api.example.com',
+  protoSource: ProtoSource.local('protos'),
 };
 
 export default config;
@@ -52,8 +54,10 @@ const user = await api.userService.getUser({ id: '1' });
 If your backend has its own services:
 
 ```bash
-npx react-native-proto generate --from local --path ./protos --out ./src/generated
+npx react-native-proto generate --out ./src/generated
 ```
+
+Pass `--path ./protos` (or `ProtoSource.local('protos')` on config) to pin a folder. Omit both to fetch `.proto` files from the project directory. GitHub/Buf: `ProtoSource.github` / `ProtoSource.buf`, or `--from github` / `--from buf`.
 
 Or from GitHub:
 

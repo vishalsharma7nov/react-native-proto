@@ -20,6 +20,7 @@ Use this page like a map. Start with the **Consumer app** section if you are set
 | Path | Purpose |
 |------|---------|
 | `packages/react-native-proto/src/index.ts` | Public entry — what apps import (`createClient`, errors, types). |
+| `packages/react-native-proto/src/proto-source.ts` | `ProtoSource` — local / GitHub / Buf proto location |
 | `packages/react-native-proto/src/transport.ts` | Sends the request to the server and reads the response. |
 | `packages/react-native-proto/src/errors.ts` | Error class and helpers (`ProtoClientError`, `isProtoClientError`). |
 | `packages/react-native-proto/src/client-factory.ts` | Builds `api.userService.getUser` from the method map. |

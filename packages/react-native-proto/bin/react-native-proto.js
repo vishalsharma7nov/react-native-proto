@@ -4,6 +4,7 @@
 /**
  * react-native-proto CLI — generate clients from GitHub, Buf, or local .proto files.
  * Usage:
+ *   react-native-proto generate
  *   react-native-proto generate --from local --path ./protos --out ./src/generated
  *   react-native-proto generate --from github --repo https://github.com/org/protos.git --ref v1.0.0 --out ./src/generated
  *   react-native-proto generate --from buf --module buf.build/owner/name --ref v1.0.0 --out ./src/generated
@@ -16,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { discoverLocalProtoDir } = require('./proto-source');
 
 const MAX_PROTO_FILES = 500;
 const WATCH_DEBOUNCE_MS = 300;
@@ -38,8 +40,9 @@ Commands:
   help       Show this help
 
 Options for generate / watch:
-  --from local|github|buf
-  --path <dir>           Local proto directory (local)
+  --from local|github|buf  (default: local)
+  --path <dir>           Local proto directory, or subdirectory in a GitHub clone
+                         (local default: protos/, vendor/protos/, or the project dir)
   --repo <git-url>       Git repository URL (github)
   --module <buf-module>  Buf module, e.g. buf.build/owner/name (buf)
   --ref <tag|commit|ver> Git ref (github) or Buf version (buf)
@@ -49,6 +52,7 @@ Options for generate / watch:
   --help, -h
 
 Examples:
+  react-native-proto generate
   react-native-proto generate --from local --path ./vendor/protos --out ./src/generated
   react-native-proto generate --from buf --module buf.build/acme/petapis --ref 1.0.0 --out ./src/generated
   react-native-proto generate --from local --path ./protos --out ./src/api/generated --import-from @vishalsharma7nov/react-native-proto
@@ -62,10 +66,19 @@ function fail(message, code = 1) {
   throw new CliError(message, code);
 }
 
+function discoverOrFail(explicitPath) {
+  try {
+    return discoverLocalProtoDir(process.cwd(), explicitPath || null);
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+    return '';
+  }
+}
+
 function emptyArgs() {
   return {
     command: '',
-    from: '',
+    from: 'local',
     path: '',
     repo: '',
     module: '',
@@ -1141,14 +1154,27 @@ export { root };
 }
 
 function resolveProtoRoot(args) {
-  if (args.from === 'local') {
-    if (!args.path) fail('--path is required when --from local');
-    return { protoRoot: args.path, cleanup: null };
+  const from = args.from || 'local';
+  if (from === 'local') {
+    return {
+      protoRoot: discoverOrFail(args.path || null),
+      cleanup: null,
+    };
   }
-  if (args.from === 'github') {
-    return { protoRoot: stageFromGithub(args.repo, args.ref), cleanup: null };
+  if (from === 'github') {
+    const root = stageFromGithub(args.repo, args.ref);
+    if (!args.path) {
+      return { protoRoot: root, cleanup: null };
+    }
+    const nested = path.isAbsolute(args.path)
+      ? args.path
+      : path.join(root, args.path);
+    if (!fs.existsSync(nested)) {
+      fail(`Proto path does not exist in repo: ${nested}`);
+    }
+    return { protoRoot: nested, cleanup: null };
   }
-  if (args.from === 'buf') {
+  if (from === 'buf') {
     return {
       protoRoot: stageFromBuf(args.module, args.ref),
       cleanup: null,
@@ -1216,11 +1242,8 @@ function argsFromLock(lock) {
   defaults.importFrom = lock.importFrom || lock['import-from'] || '';
 
   if (lock.source === 'local') {
-    if (!lock.path) {
-      fail('protos.lock.json: "path" is required when source is "local"');
-    }
     defaults.from = 'local';
-    defaults.path = lock.path;
+    defaults.path = lock.path || '';
     return defaults;
   }
 
@@ -1233,6 +1256,7 @@ function argsFromLock(lock) {
     defaults.from = 'github';
     defaults.repo = lock.repo;
     defaults.ref = lock.ref;
+    defaults.path = lock.path || '';
     return defaults;
   }
 
@@ -1257,17 +1281,22 @@ function syncFromLock() {
 
 function resolveWatchArgs(args) {
   const hasGenerateFlags =
-    Boolean(args.from) ||
+    Boolean(args.from && args.from !== 'local') ||
     Boolean(args.path) ||
     Boolean(args.repo) ||
     Boolean(args.module);
 
   if (!hasGenerateFlags) {
-    return argsFromLock(readLockFile());
+    const lockPath = path.resolve('protos.lock.json');
+    if (fs.existsSync(lockPath)) {
+      return argsFromLock(readLockFile());
+    }
+    args.from = 'local';
+    return args;
   }
 
   if (!args.from) {
-    fail('watch: --from is required when not using protos.lock.json');
+    args.from = 'local';
   }
   return args;
 }
@@ -1280,11 +1309,8 @@ function watchProtos(cliArgs) {
       'watch only supports --from local (or a protos.lock.json with source "local"). Use generate/sync for github/buf.'
     );
   }
-  if (!args.path) {
-    fail('watch: --path is required for local proto watching');
-  }
 
-  const watchDir = path.resolve(args.path);
+  const watchDir = path.resolve(discoverOrFail(args.path || null));
   if (!fs.existsSync(watchDir)) {
     fail(`Proto path does not exist: ${watchDir}`);
   }

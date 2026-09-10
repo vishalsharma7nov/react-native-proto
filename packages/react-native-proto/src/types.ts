@@ -1,6 +1,7 @@
 import type { Type } from 'protobufjs';
 import type { Interceptor } from './interceptors';
 import type { PathTemplatePreset } from './path-templates';
+import type { ProtoSource } from './proto-source';
 
 export type TransportKind = 'http' | 'connect' | 'native-grpc';
 
@@ -9,6 +10,15 @@ export type HeaderMap = Record<string, string>;
 export type ProtoClientConfig = {
   /** API origin, for example https://api.example.com */
   baseUrl: string;
+  /**
+   * Where to load `.proto` files for generate/sync.
+   *
+   * Use `ProtoSource.local`, `ProtoSource.github`, or `ProtoSource.buf`.
+   * When omitted, generate fetches `.proto` files from the project directory
+   * (`protos/`, `vendor/protos/`, or the current directory).
+   * Not used at request time by `createApi` / `createClient`.
+   */
+  protoSource?: ProtoSource;
   /** Optional per-request headers (auth tokens, app version, etc.) */
   getHeaders?: () => HeaderMap | Promise<HeaderMap>;
   /** Request timeout in milliseconds (default 30000) */
